@@ -72,7 +72,7 @@ void Trajectory::init_markers()
   // POINTS markers use x and y scale for width/height respectively
   points.scale.x = 0.1;
   points.scale.y = 0.1;
-
+  points.scale.z = 0.1;
   // LINE_STRIP/LINE_LIST markers use only the x component of scale, for the line width
   line_strip.scale.x = 0.05;
   line_list.scale.x = 0.05;
@@ -97,14 +97,12 @@ void Trajectory::generate_trajectory(float x,float y)
 {
 
   init_markers();
-  cout << "inited markers" << endl;
-
+  
   float theta = atan2(y,x);
-  cout << theta << "  " << x << " " << y << endl;
   
   float v = .4;
-  float w = .3;
-  dt = .5;
+  float w = .25;
+  dt = .1;
   
   float linear_t_end = sqrt(x*x + y*y)/v + dt;
   float angular_t_end = abs(theta)/w + dt;
@@ -122,9 +120,7 @@ void Trajectory::generate_trajectory(float x,float y)
 
   count = 0;
   
-  cout << "generating trajectories" << endl;
   zero_pt_turn(theta,w);
-  cout << "x:\n" <<traj_x << "\ny:\n" << traj_y << "\ntheta:\n" << traj_theta << "\nt:\n" << traj_t << "\n DONE \n" << endl;
   straight_trajectory(x,y,theta,v,w);
   cout << "x:\n" <<traj_x << "\ny:\n" << traj_y << "\ntheta:\n" << traj_theta << "\nt:\n" << traj_t << "\n DONE \n" << endl;
 
@@ -159,10 +155,6 @@ void Trajectory::straight_trajectory(float x,float y, float theta, float v, floa
     traj_y(count) = (p.y);
     traj_theta(count) = theta;
     traj_t(count) = (t) + start_time;
-
-    p.x += vx/10;
-    p.y += vy/10;
-    line_list.points.push_back(p);
     t += dt;  
     count++;
   }
@@ -172,14 +164,11 @@ void Trajectory::straight_trajectory(float x,float y, float theta, float v, floa
   t = linear_t_end;
   points.points.push_back(p);
   line_strip.points.push_back(p);
-  line_list.points.push_back(p);
+
   traj_x(count) = (p.x);
   traj_y(count) = (p.y);
   traj_theta(count) = (theta);
   traj_t(count) = (t) + start_time;
-  p.x += vx;
-  p.y += vy;
-  line_list.points.push_back(p);
   count++;
   
   return;
@@ -209,9 +198,6 @@ void Trajectory::zero_pt_turn(float theta, float w)
     traj_theta(count) = w*t*sgn(theta);
     traj_t(count) = (t) + start_time;
 
-    p.x += w*cos(w*t*sgn(theta));
-    p.y += w*sin(w*t*sgn(theta));
-    line_list.points.push_back(p);
     t += dt;  
     count++;
   }
@@ -221,15 +207,10 @@ void Trajectory::zero_pt_turn(float theta, float w)
   t = angular_t_end;
   points.points.push_back(p);
   line_strip.points.push_back(p);
-  line_list.points.push_back(p);
   traj_x(count) = (p.x);
   traj_y(count) = (p.y);
   traj_theta(count) = (theta);
   traj_t(count) = (t) + start_time;
-
-  p.x += cos(theta);
-  p.y += sin(theta);
-  line_list.points.push_back(p);
   count++;
 }
 
@@ -303,15 +284,14 @@ tf::StampedTransform Trajectory_Tracker::broadcast_new_traj_frame()
 
 Eigen::ArrayXf Trajectory::traj_time_lookup(float t)
 {
-  int lower;
-  int upper;
+  int lower = traj_t.size()-2;
+  int upper = traj_t.size()-1;
   float x,y,theta;
   if(t >= t_end){
     int last_index = traj_x.size()-1;
     float x = traj_x(last_index);
     float y = traj_y(last_index);
     float theta = traj_theta(last_index);
-    cout << "past end time" << endl;
     Eigen::ArrayXf traj_at_t = Eigen::ArrayXf(4);
     traj_at_t << t,x,y,theta;
     return traj_at_t;
@@ -321,7 +301,6 @@ Eigen::ArrayXf Trajectory::traj_time_lookup(float t)
     float x = traj_x(0);
     float y = traj_y(0);
     float theta = traj_theta(0);
-    cout << "start time" << endl;
     Eigen::ArrayXf traj_at_t = Eigen::ArrayXf(4);
     traj_at_t << t,x,y,theta;
     return traj_at_t;
@@ -341,6 +320,7 @@ Eigen::ArrayXf Trajectory::traj_time_lookup(float t)
     float theta = traj_theta(lower) + (traj_theta(upper) - traj_theta(lower))*(t - traj_t(lower))/(traj_t(upper) - traj_t(lower));
     Eigen::ArrayXf traj_at_t = Eigen::ArrayXf(4);
     traj_at_t << t,x,y,theta;
+    
     return traj_at_t;
   }
 }
@@ -382,8 +362,10 @@ geometry_msgs::Point Trajectory_Tracker::transform_goal_to_robot(float x, float 
     p.point.x = x;
     p.point.y = y;
     p.point.z = 0;
-    
+
+    ROS_INFO("Planned path to World: %f, %f",p.point.x,p.point.y);    
     listener.transformPoint("/robot",p,p);
+    ROS_INFO("Planned path to Robot: %f, %f",p.point.x,p.point.y);
     return p.point;  
   }else{
     ROS_ERROR("FAILED TO GET TRANSFORM BETWEEN /world and /robot");
@@ -397,7 +379,8 @@ void Trajectory_Tracker::track_trajectory(const planner::gen_trajGoalConstPtr &g
   ROS_INFO("TRACKING TRAJECTORY");
   float x = goal->x;
   float y = goal->y;
-
+  x = x;
+  y = y;
   if(goal->frame == "world"){
     geometry_msgs::Point goal_point = transform_goal_to_robot(x,y);
     x = goal_point.x;
@@ -439,7 +422,7 @@ void Trajectory_Tracker::track_trajectory(const planner::gen_trajGoalConstPtr &g
     
     marker_pub.publish(current_trajectory.points);
     marker_pub.publish(current_trajectory.line_strip);
-    marker_pub.publish(current_trajectory.line_list);
+    // marker_pub.publish(current_trajectory.line_list);
     transform.setOrigin( tf::Vector3(traj_at_t(1), traj_at_t(2), 0));
 
     q.setRPY(0, 0, traj_at_t(3));
@@ -463,12 +446,19 @@ void Trajectory_Tracker::track_trajectory(const planner::gen_trajGoalConstPtr &g
     loop_rate.sleep();
     if(!ros::ok())
     {
+
       result.success = 0;
       action_server.setSucceeded(result);
       return;
     }
     br.sendTransform(tf::StampedTransform(frame_transform, ros::Time::now(), "/world", "/traj_frame"));
   }
+  geometry_msgs::Pose2D cmd_vector;
+  cmd_vector.x = 0;
+  cmd_vector.y = 0;
+  cmd_vector.theta = 0;
+  cmd_pub.publish(cmd_vector);
+
   result.success = 1;
   action_server.setSucceeded(result);
 }
