@@ -1,6 +1,8 @@
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PointStamped.h>
+#include <geometry_msgs/Point.h>
 #include <geometry_msgs/Pose.h>
 #include <geometry_msgs/Pose2D.h>
 
@@ -86,6 +88,8 @@ void Trajectory::init_markers()
 
   // Line list is red
   line_list.color.r = 1.0;
+  line_list.color.b = 1.0;
+
   line_list.color.a = 1.0;
 }
 
@@ -205,8 +209,8 @@ void Trajectory::zero_pt_turn(float theta, float w)
     traj_theta(count) = w*t*sgn(theta);
     traj_t(count) = (t) + start_time;
 
-    p.x += cos(w*t*sgn(theta));
-    p.y += sin(w*t*sgn(theta));
+    p.x += w*cos(w*t*sgn(theta));
+    p.y += w*sin(w*t*sgn(theta));
     line_list.points.push_back(p);
     t += dt;  
     count++;
@@ -265,6 +269,8 @@ public:
 
   void pose_callback(const geometry_msgs::PoseStamped::ConstPtr&);
   void track_trajectory(const planner::gen_trajGoalConstPtr &goal);
+  geometry_msgs::Point transform_goal_to_robot(float, float);
+
   Eigen::ArrayXf get_error();
   tf::StampedTransform broadcast_new_traj_frame();
 
@@ -363,17 +369,45 @@ Eigen::ArrayXf Trajectory_Tracker::get_error()
   return error;
 }
 
+geometry_msgs::Point Trajectory_Tracker::transform_goal_to_robot(float x, float y)
+{
+  ROS_INFO("WAITING FOR TRANSFORM");
+  geometry_msgs::PointStamped p;
+  ros::Time now = ros::Time::now();
+  if(listener.waitForTransform("/world","/robot",now,ros::Duration(5.0)))
+  {
+    p.header.stamp = now;
+    p.header.frame_id = "/world";
+    
+    p.point.x = x;
+    p.point.y = y;
+    p.point.z = 0;
+    
+    listener.transformPoint("/robot",p,p);
+    return p.point;  
+  }else{
+    ROS_ERROR("FAILED TO GET TRANSFORM BETWEEN /world and /robot");
+    return p.point;
+  }
+  
+}
+
 void Trajectory_Tracker::track_trajectory(const planner::gen_trajGoalConstPtr &goal)
 {
   ROS_INFO("TRACKING TRAJECTORY");
   float x = goal->x;
   float y = goal->y;
 
+  if(goal->frame == "world"){
+    geometry_msgs::Point goal_point = transform_goal_to_robot(x,y);
+    x = goal_point.x;
+    y = goal_point.y;  
+  }
+  
   bool following_trajectory = true;
   tf::StampedTransform frame_transform = broadcast_new_traj_frame();
   cout << "generated trajectory" << endl;
   current_trajectory.generate_trajectory(x,y);
-  // while(following_trajectory)
   ros::Rate loop_rate(10);
   tf::StampedTransform transform;
   tf::Quaternion q;
@@ -381,7 +415,7 @@ void Trajectory_Tracker::track_trajectory(const planner::gen_trajGoalConstPtr &g
   float t = 0;
   while(t<=(current_trajectory.t_end)+1)
   {
-    if(!action_server.isActive())
+    if (action_server.isPreemptRequested() || !ros::ok())
     {
       float u_v = 0;
       float u_w = 0;
@@ -390,11 +424,12 @@ void Trajectory_Tracker::track_trajectory(const planner::gen_trajGoalConstPtr &g
       cmd_vector.y = 0;
       cmd_vector.theta = u_w;
       cmd_pub.publish(cmd_vector);
-      result.success = 2;
+      result.success = 0;
       action_server.setSucceeded(result);
+      cout << "CANCELING GOAL" << endl;
       return;
     }
-  
+    
 
     t = (ros::Time::now()-start_time).toSec();
     feedback.time = t;

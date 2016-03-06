@@ -2,6 +2,7 @@
 float32 x
 float32 y
 float32 theta
+string frame
 ---
 #result definition
 int32 success
