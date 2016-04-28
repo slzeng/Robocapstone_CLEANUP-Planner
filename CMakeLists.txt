@@ -8,7 +8,7 @@ find_package(catkin REQUIRED COMPONENTS roscpp rospy std_msgs genmsg tf actionli
 # add_message_files(DIRECTORY msg FILES Num.msg)
 # add_service_files(DIRECTORY srv FILES AddTwoInts.srv)
 
-add_action_files(DIRECTORY action FILES gen_traj.action)
+add_action_files(DIRECTORY action FILES gen_traj.action stop.action)
 
 ## Generate added messages and services
 # generate_messages(DEPENDENCIES std_msgs)
