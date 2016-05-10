@@ -62,6 +62,7 @@ class Task_Manager(object):
         self.current_task = -1;
 
         self.weed_target = None;
+        self.low_res_target = None;
         self.task_queue = Queue.PriorityQueue();
         self.action_in_proccess = False;
         self.planner_client = actionlib.SimpleActionClient('planner', planner.msg.gen_trajAction)
@@ -79,7 +80,9 @@ class Task_Manager(object):
         rospy.Subscriber("/boundary", Int32, self.boundary_callback)
         rospy.Subscriber("/weed_detection", Pose2D, self.low_res_detection_callback)
         rospy.Subscriber("/weed_location",Pose2D,self.high_res_detection_callback)
-    
+        
+        self.current_task = 'Finding weed'
+
         self.detection_level = "low";
         self.detection_level_pub.publish(self.detection_level)
         #start task is follow trajectory
@@ -95,7 +98,7 @@ class Task_Manager(object):
                 (self.current_priority,obj) = self.task_queue.get_nowait()
                 obj.action()
             
-
+            print(self.current_task)
             rate.sleep()
             
             
@@ -106,21 +109,38 @@ class Task_Manager(object):
 
 
     def planner_complete_callback(self, data):
+        self.action_in_proccess = False
+
         if(data.result.success == 1):
-            goal = planner.msg.gen_trajGoal()
-            goal.x = random.uniform(.5,5)
-            goal.y = random.uniform(.1,3)*((-1)**random.randint(0,1))
-            goal.theta = 0
-            goal.frame = "robot"
-            t = Follow_Trajectory_Task(goal,self.planner_client)
+            # goal = planner.msg.gen_trajGoal()
+            # goal.x = random.uniform(.5,5)
+            # goal.y = random.uniform(.1,3)*((-1)**random.randint(0,1))
+            # goal.theta = 0
+            # goal.frame = "robot"
+            # t = Follow_Trajectory_Task(goal,self.planner_client)
             # print("REQUESTING NEW PLANNER RANDOM ACTION: Plan to %f,%f" % (goal.x, goal.y))
             # self.task_queue.put((t.priority,t))
             self.boundary_triggered = 0;
+
+            self.detection_level = 'high'
+            self.detection_level_pub.publish(self.detection_level)
+            d = rospy.Duration(5)
+            rospy.sleep(d)
         else:
             print("FAILED GOAL")
-        self.action_in_proccess = False
+        self.low_res_target = None
+        
+        self.detection_level = 'low'
+        self.detection_level_pub.publish(self.detection_level)
+        go_msg = Pose2D(.1,0,0);
+        self.cmd_pub.publish(go_msg)
+        print('planner complete')
+        self.current_task = 'Finding weed'
+
 
     def drill_callback(self,data):
+        self.current_task = 'Drilling'
+
         print("DRILLING")
         rospy.sleep(2)
         print("DONE")
@@ -128,10 +148,12 @@ class Task_Manager(object):
         self.weed_target = None
         self.detection_level = 'low'
         self.action_in_proccess = False
+        self.low_res_target = None
 
 
 
     def boundary_callback(self,data):
+        self.current_task = 'Boundary Callback???!?!?!?'
         if(data.data == 1 and self.boundary_triggered == 0 and self.weed_target == None):
             self.planner_client.cancel_all_goals()
             self.boundary_triggered = 1;
@@ -149,21 +171,30 @@ class Task_Manager(object):
             self.weed_target = None
 
     def low_res_detection_callback(self,data):
+        
         if(self.weed_target == None):
-            
-            # self.weed_target = data;
-            self.planner_client.cancel_all_goals()
+            self.current_task = 'Low Res Scaning'
+    
+        #     self.low_res_target = data;
+        #     self.planner_client.cancel_all_goals()
 
-            stop_msg = Pose2D(0,0,0);
-            self.cmd_pub.publish(stop_msg)
-            d = rospy.Duration(.5)
-            rospy.sleep(d)
+        #     goal = planner.msg.gen_trajGoal()
+        #     goal.x = self.low_res_target.x
+        #     goal.y = self.low_res_target.y
+        #     goal.theta = 0
+        #     goal.frame = "robot"
+        #     print("ADDING Reposition TASK: Plan to %f,%f" % (goal.x, goal.y))
+        #     t = Follow_Trajectory_Task(goal,self.planner_client)
+        #     self.task_queue.put_nowait((self.weed_priority,t))
+
             self.detection_level = 'high'
             self.detection_level_pub.publish(self.detection_level)
-
+      
 
     def high_res_detection_callback(self,data):
         if(self.weed_target == None):
+            self.current_task = 'High Res Scaning'
+
             self.weed_target = data;
             self.planner_client.cancel_all_goals()
 
@@ -175,6 +206,9 @@ class Task_Manager(object):
             print("ADDING WEED TASK: Plan to %f,%f" % (goal.x, goal.y))
             t = Follow_Trajectory_Task(goal,self.planner_client)
             self.task_queue.put_nowait((self.weed_priority,t))
+            self.detection_level = 'wait'
+            self.detection_level_pub.publish(self.detection_level)
+      
 
             t = Drill_Task(self.eliminator_client)
             self.task_queue.put_nowait((t.priority,t))

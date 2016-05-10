@@ -99,42 +99,70 @@ void Trajectory::generate_trajectory(float x,float y)
 {
 
   init_markers();
-  
+  float PI = 3.1415;
   float theta = atan2(y,x);
-  if(theta>(3.1415/2)){
-    theta = -(3.1415-theta);
-  }else if(theta<(-3.1415/2)){
-    theta = -(-3.1415-theta);
+  if(theta>(PI/2)){
+    theta = -(PI-theta);
+  }else if(theta<(-PI/2)){
+    theta = -(-PI-theta);
   }
   theta = theta;
   float v = .1;
-  float w = .3;
+  float w = .2;
   dt = .05;
   
+  if(abs(theta)<(PI/6)){
+    float linear_t_end = sqrt(x*x + y*y)/v + dt;
+    float angular_t_end = abs(theta)/w + dt;
+    float lin_wait = 2*linear_t_end + 5;
+    float ang_wait = 4*angular_t_end + 5;
+    t_end = linear_t_end + lin_wait + angular_t_end + ang_wait;
+    
+    float t = 0;
+    
+    int length = int(1.2*t_end/dt); // THIS IS HACK PLS FIX
+    cout << length << endl;
+    traj_x = x + Eigen::ArrayXf::Zero(length);
+    traj_y = y + Eigen::ArrayXf::Zero(length);
+    traj_t = t_end + Eigen::ArrayXf::Zero(length);
+    traj_theta = theta + Eigen::ArrayXf::Zero(length);
+    traj_v = 0 + Eigen::ArrayXf::Zero(length);
+    traj_w = 0 + Eigen::ArrayXf::Zero(length);
 
-  float linear_t_end = sqrt(x*x + y*y)/v + dt;
-  float angular_t_end = abs(theta)/w + dt;
-  float lin_wait = 2*linear_t_end + 5;
-  float ang_wait = 4*angular_t_end + 5;
-  t_end = linear_t_end + lin_wait + angular_t_end + ang_wait;
-  
-  float t = 0;
-  
-  int length = int(1.2*t_end/dt); // THIS IS HACK PLS FIX
-  cout << length << endl;
-  traj_x = x + Eigen::ArrayXf::Zero(length);
-  traj_y = y + Eigen::ArrayXf::Zero(length);
-  traj_t = t_end + Eigen::ArrayXf::Zero(length);
-  traj_theta = theta + Eigen::ArrayXf::Zero(length);
-  traj_v = 0 + Eigen::ArrayXf::Zero(length);
-  traj_w = 0 + Eigen::ArrayXf::Zero(length);
+    count = 0;
+    
+    zero_pt_turn(theta,w,ang_wait);
+    straight_trajectory(x,y,theta,v,w,lin_wait);
+    cout << "x:\n" <<traj_x << "\ny:\n" << traj_y << "\ntheta:\n" << traj_theta << "\nt:\n" << traj_t << "\nv:\n" << traj_v << "\n DONE \n" << endl;
+  }else{
+    float theta = atan2(y,x-.1);
+    float backup_t_end = (.1-x)/v + dt;
+    float linear_t_end = sqrt(x*x + y*y)/v + dt;
+    float angular_t_end = abs(theta)/w + dt;
+    float lin_wait = 2*linear_t_end + 3;
+    float ang_wait = 4*angular_t_end + 5;
+    t_end = backup_t_end + lin_wait + linear_t_end + lin_wait + angular_t_end + ang_wait;
+    
+    float t = 0;
+    
+    int length = int(1.2*t_end/dt); // THIS IS HACK PLS FIX
+    cout << length << endl;
+    traj_x = x + Eigen::ArrayXf::Zero(length);
+    traj_y = y + Eigen::ArrayXf::Zero(length);
+    traj_t = t_end + Eigen::ArrayXf::Zero(length);
+    traj_theta = theta + Eigen::ArrayXf::Zero(length);
+    traj_v = 0 + Eigen::ArrayXf::Zero(length);
+    traj_w = 0 + Eigen::ArrayXf::Zero(length);
 
-  count = 0;
-  
-  zero_pt_turn(theta,w,ang_wait);
-  straight_trajectory(x,y,theta,v,w,lin_wait);
-  cout << "x:\n" <<traj_x << "\ny:\n" << traj_y << "\ntheta:\n" << traj_theta << "\nt:\n" << traj_t << "\nv:\n" << traj_v << "\n DONE \n" << endl;
+    count = 0;
+    
+    straight_trajectory(.1-x,0,0,v,w,lin_wait);
+    zero_pt_turn(theta,w,ang_wait);
+    straight_trajectory(x,y,theta,v,w,lin_wait);
+    cout << "x:\n" <<traj_x << "\ny:\n" << traj_y << "\ntheta:\n" << traj_theta << "\nt:\n" << traj_t << "\nv:\n" << traj_v << "\n DONE \n" << endl;
 
+  }
+  
 }
 
 // goal x, goal, y, goal theta, max v, max w
